@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI-Powered Weekly Calendar</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(90deg, #4f46e5, #7c3aed);
+            color: white;
+            padding: 25px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo i {
+            font-size: 2.5rem;
+        }
+
+        .logo h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+        }
+
+        .tagline {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        .ai-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.15);
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-size: 0.95rem;
+        }
+
+        .ai-status i {
+            color: #10b981;
+        }
+
+        .calendar-container {
+            padding: 30px;
+        }
+
+        .week-days {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .day-column {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .day-column:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+        }
+
+        .day-header {
+            background: linear-gradient(90deg, #60a5fa, #3b82f6);
+            color: white;
+            padding: 20px 15px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.3rem;
+        }
+
+        .notes-container {
+            padding: 20px;
+            min-height: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .note {
+            background: #f8fafc;
+            border-left: 4px solid #60a5fa;
+            padding: 15px;
+            border-radius: 10px;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .note:hover {
+            background: #f1f5f9;
+            transform: translateX(5px);
+        }
+
+        .note-content {
+            font-size: 0.95rem;
+            line-height: 1.5;
+            margin-bottom: 10px;
+            white-space: pre-wrap;
+        }
+
+        .note-time {
+            font-size: 0.8rem;
+            color: #64748b;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .add-note-btn {
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 1rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.3s ease;
+            margin-top: auto;
+        }
+
+        .add-note-btn:hover {
+            background: #0da271;
+        }
+
+        .ai-actions {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 40px;
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 15px;
+        }
+
+        .ai-btn {
+            background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 15px 30px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .ai-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 7px 20px rgba(123, 58, 237, 0.3);
+        }
+
+        .ai-btn.secondary {
+            background: linear-gradient(90deg, #f59e0b, #d97706);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: white;
+            width: 90%;
+            max-width: 600px;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+
+        .modal-header h2 {
+            font-size: 1.8rem;
+            color: #4f46e5;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.8rem;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .close-btn:hover {
+            color: #ef4444;
+        }
+
+        .modal-body {
+            margin-bottom: 25px;
+        }
+
+        .note-input {
+            width: 100%;
+            min-height: 150px;
+            padding: 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 1rem;
+            line-height: 1.6;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        .note-input:focus {
+            outline: none;
+            border-color: #4f46e5;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 15px;
+        }
+
+        .save-btn {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 30px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .save-btn:hover {
+            background: #4338ca;
+        }
+
+        .cancel-btn {
+            background: #f1f5f9;
+            color: #64748b;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 30px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .cancel-btn:hover {
+            background: #e2e8f0;
+        }
+
+        .ai-chat-modal .modal-content {
+            max-width: 500px;
+        }
+
+        .ai-response {
+            background: #f0f9ff;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            border-left: 4px solid #0ea5e9;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #e2e8f0;
+            border-top: 5px solid #4f46e5;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: #94a3b8;
+            font-size: 0.9rem;
+            border-top: 1px solid #e2e8f0;
+            margin-top: 30px;
+        }
+
+        @media (max-width: 1200px) {
+            .week-days {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .week-days {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            header {
+                flex-direction: column;
+                gap: 20px;
+                text-align: center;
+            }
+            
+            .ai-actions {
+                flex-direction: column;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .week-days {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                border-radius: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <i class="fas fa-calendar-alt"></i>
+                <div>
+                    <h1>AI Calendar</h1>
+                    <div class="tagline">Smart scheduling with AI-powered insights</div>
+                </div>
+            </div>
+            <div class="ai-status">
+                <i class="fas fa-circle"></i>
+                <span>TensorFlow.js Ready • YandexGPT Connected</span>
+            </div>
+        </header>
+
+        <div class="calendar-container">
+            <div class="week-days" id="weekDays">
+                <!-- Days will be dynamically generated here -->
+            </div>
+
+            <div class="ai-actions">
+                <button class="ai-btn" id="structureAllBtn">
+                    <i class="fas fa-project-diagram"></i>
+                    Structure All Notes with AI
+                </button>
+                <button class="ai-btn secondary" id="summarizeAllBtn">
+                    <i class="fas fa-file-contract"></i>
+                    Summarize Week with AI
+                </button>
+            </div>
+        </div>
+
+        <footer>
+            <p>AI Calendar Demo • Powered by TensorFlow.js & YandexGPT • Fully client-side application</p>
+        </footer>
+    </div>
+
+    <!-- Note Editing Modal -->
+    <div class="modal" id="noteModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Add New Note</h2>
+                <button class="close-btn" id="closeNoteModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <textarea class="note-input" id="noteInput" placeholder="Enter your note here..."></textarea>
+                <div class="ai-response" id="aiNoteResponse" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="cancel-btn" id="cancelNote">Cancel</button>
+                <button class="ai-btn secondary" id="askAIForNote">
+                    <i class="fas fa-robot"></i>
+                    Ask AI to Improve
+                </button>
+                <button class="save-btn" id="saveNote">Save Note</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Chat Modal -->
+    <div class="modal ai-chat-modal" id="aiChatModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>AI Assistant</h2>
+                <button class="close-btn" id="closeAiModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="loading" id="aiLoading" style="display: none;">
+                    <div class="spinner"></div>
+                </div>
+                <div class="ai-response" id="aiChatResponse"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
