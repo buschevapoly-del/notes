@@ -1,158 +1,106 @@
-// app.js - Main application logic for AI Calendar
+// app.js - AI Weekly Calendar Application
 
-// Import TensorFlow.js dynamically
+// Import TensorFlow.js
 import * as tf from 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.es2017.mjs';
 
-// Configuration for Yandex Cloud Function
+// Configuration
 const YANDEX_API_URL = 'https://functions.yandexcloud.net/d4eaqaic6hn3ja5d97fm';
-
-// Days of the week
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const STORAGE_KEY = 'ai_calendar_notes_v2';
 
-// Calendar application class
+/**
+ * Main AI Calendar Application Class
+ */
 class AICalendar {
     constructor() {
         this.notes = {};
-        this.currentDay = null;
-        this.currentNoteId = null;
         this.tfModel = null;
         this.isTfReady = false;
         
-        // Initialize TensorFlow.js
-        this.initTensorFlow();
-        
         // Initialize the application
-        this.initApp();
+        this.init();
     }
     
     /**
-     * Initialize TensorFlow.js for potential future ML features
+     * Initialize the application
+     */
+    async init() {
+        try {
+            // Initialize TensorFlow.js
+            await this.initTensorFlow();
+            
+            // Load saved notes
+            this.loadNotes();
+            
+            // Setup UI
+            this.renderWeek();
+            this.setupEventListeners();
+            
+            console.log('AI Calendar initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize application:', error);
+            this.showNotification('Failed to initialize application', 'error');
+        }
+    }
+    
+    /**
+     * Initialize TensorFlow.js
      */
     async initTensorFlow() {
         try {
-            // Check if TensorFlow.js is available
             await tf.ready();
             console.log('TensorFlow.js loaded successfully');
             
-            // Create a simple model for demonstration
-            // In a real application, this could be a pre-trained model for text processing
-            this.tfModel = tf.sequential({
-                layers: [
-                    tf.layers.dense({ units: 10, inputShape: [5], activation: 'relu' }),
-                    tf.layers.dense({ units: 1, activation: 'sigmoid' })
-                ]
-            });
-            
+            // Create a simple model for text analysis demonstration
+            this.tfModel = tf.sequential();
             this.isTfReady = true;
-            console.log('TensorFlow model initialized');
             
             // Update UI status
-            this.updateAIStatus(true);
+            this.updateAIStatus();
         } catch (error) {
-            console.error('Error initializing TensorFlow:', error);
-            this.updateAIStatus(false);
+            console.warn('TensorFlow.js initialization warning:', error);
+            this.isTfReady = false;
         }
     }
     
     /**
      * Update AI status in the UI
      */
-    updateAIStatus(isReady) {
+    updateAIStatus() {
         const statusElement = document.querySelector('.ai-status span');
         if (statusElement) {
-            statusElement.textContent = isReady 
-                ? 'TensorFlow.js Ready • YandexGPT Connected' 
-                : 'AI Features Limited • Check Connection';
-            
-            const statusIcon = document.querySelector('.ai-status i');
-            if (statusIcon) {
-                statusIcon.style.color = isReady ? '#10b981' : '#f59e0b';
-            }
+            statusElement.textContent = this.isTfReady 
+                ? 'TensorFlow.js Ready • Notes Saved Locally' 
+                : 'Notes Saved Locally • AI Features Available';
         }
-    }
-    
-    /**
-     * Initialize the application UI and event listeners
-     */
-    initApp() {
-        this.generateWeekDays();
-        this.loadNotesFromStorage();
-        this.setupEventListeners();
-    }
-    
-    /**
-     * Generate the 7 day columns for the week view
-     */
-    generateWeekDays() {
-        const weekDaysContainer = document.getElementById('weekDays');
-        weekDaysContainer.innerHTML = '';
-        
-        // Get current date to display
-        const today = new Date();
-        const currentDayIndex = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
-        
-        // Adjust to start from Monday (index 1)
-        const mondayOffset = currentDayIndex === 0 ? -6 : 1 - currentDayIndex;
-        const mondayDate = new Date(today);
-        mondayDate.setDate(today.getDate() + mondayOffset);
-        
-        DAYS_OF_WEEK.forEach((dayName, index) => {
-            // Calculate date for each day
-            const dayDate = new Date(mondayDate);
-            dayDate.setDate(mondayDate.getDate() + index);
-            
-            // Format date display
-            const dateStr = dayDate.toLocaleDateString('en-US', { 
-                month: 'short', 
-                day: 'numeric' 
-            });
-            
-            // Check if this is today
-            const isToday = dayDate.toDateString() === today.toDateString();
-            
-            const dayColumn = document.createElement('div');
-            dayColumn.className = 'day-column';
-            dayColumn.dataset.day = dayName.toLowerCase();
-            
-            dayColumn.innerHTML = `
-                <div class="day-header ${isToday ? 'today' : ''}">
-                    <div>${dayName}</div>
-                    <div style="font-size: 0.9rem; opacity: 0.9;">${dateStr}</div>
-                    ${isToday ? '<div style="font-size: 0.7rem; margin-top: 3px;">TODAY</div>' : ''}
-                </div>
-                <div class="notes-container" id="notes-${dayName.toLowerCase()}">
-                    <!-- Notes will be dynamically added here -->
-                </div>
-                <button class="add-note-btn" data-day="${dayName.toLowerCase()}">
-                    <i class="fas fa-plus"></i> Add Note
-                </button>
-            `;
-            
-            weekDaysContainer.appendChild(dayColumn);
-        });
-        
-        // Add notes to each day after creating the columns
-        this.renderNotes();
     }
     
     /**
      * Load notes from localStorage
      */
-    loadNotesFromStorage() {
+    loadNotes() {
         try {
-            const savedNotes = localStorage.getItem('aiCalendarNotes');
-            if (savedNotes) {
-                this.notes = JSON.parse(savedNotes);
+            const savedData = localStorage.getItem(STORAGE_KEY);
+            if (savedData) {
+                this.notes = JSON.parse(savedData);
+                
+                // Ensure all days exist in notes object
+                DAYS_OF_WEEK.forEach(day => {
+                    const dayKey = day.toLowerCase();
+                    if (!this.notes[dayKey]) {
+                        this.notes[dayKey] = [];
+                    }
+                });
             } else {
-                // Initialize with empty notes for each day
+                // Initialize with empty arrays for each day
                 DAYS_OF_WEEK.forEach(day => {
                     this.notes[day.toLowerCase()] = [];
                 });
-                this.saveNotesToStorage();
+                this.saveNotes();
             }
         } catch (error) {
-            console.error('Error loading notes from storage:', error);
-            // Initialize empty notes object
+            console.error('Error loading notes:', error);
+            // Initialize empty notes
             DAYS_OF_WEEK.forEach(day => {
                 this.notes[day.toLowerCase()] = [];
             });
@@ -162,63 +110,162 @@ class AICalendar {
     /**
      * Save notes to localStorage
      */
-    saveNotesToStorage() {
+    saveNotes() {
         try {
-            localStorage.setItem('aiCalendarNotes', JSON.stringify(this.notes));
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(this.notes));
         } catch (error) {
-            console.error('Error saving notes to storage:', error);
+            console.error('Error saving notes:', error);
+            this.showNotification('Failed to save notes', 'error');
         }
     }
     
     /**
-     * Render notes for each day
+     * Render the week view with all days
      */
-    renderNotes() {
-        DAYS_OF_WEEK.forEach(day => {
-            const dayKey = day.toLowerCase();
-            const notesContainer = document.getElementById(`notes-${dayKey}`);
-            if (!notesContainer) return;
+    renderWeek() {
+        const container = document.getElementById('weekContainer');
+        if (!container) return;
+        
+        container.innerHTML = '';
+        
+        // Get current date for date display
+        const today = new Date();
+        const currentDayIndex = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        const mondayOffset = currentDayIndex === 0 ? -6 : 1 - currentDayIndex;
+        const mondayDate = new Date(today);
+        mondayDate.setDate(today.getDate() + mondayOffset);
+        
+        DAYS_OF_WEEK.forEach((dayName, index) => {
+            const dayKey = dayName.toLowerCase();
+            const dayDate = new Date(mondayDate);
+            dayDate.setDate(mondayDate.getDate() + index);
             
-            notesContainer.innerHTML = '';
+            const formattedDate = dayDate.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            });
             
-            if (this.notes[dayKey] && this.notes[dayKey].length > 0) {
-                this.notes[dayKey].forEach((note, index) => {
-                    const noteElement = document.createElement('div');
-                    noteElement.className = 'note';
-                    noteElement.dataset.noteId = `${dayKey}-${index}`;
-                    
-                    // Format time
-                    const timeStr = note.timestamp 
-                        ? new Date(note.timestamp).toLocaleTimeString([], { 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
-                          })
-                        : 'Recently';
-                    
-                    noteElement.innerHTML = `
-                        <div class="note-content">${this.escapeHtml(note.content)}</div>
-                        <div class="note-time">
-                            <i class="far fa-clock"></i>
-                            <span>${timeStr}</span>
-                            <button class="ai-note-action" data-day="${dayKey}" data-index="${index}" style="margin-left: auto; background: none; border: none; color: #8b5cf6; cursor: pointer;">
-                                <i class="fas fa-robot"></i>
-                            </button>
-                        </div>
-                    `;
-                    
-                    notesContainer.appendChild(noteElement);
-                });
-            } else {
-                // Show empty state
-                const emptyState = document.createElement('div');
-                emptyState.className = 'note';
-                emptyState.style.opacity = '0.7';
-                emptyState.style.textAlign = 'center';
-                emptyState.style.fontStyle = 'italic';
-                emptyState.textContent = 'No notes for this day';
-                notesContainer.appendChild(emptyState);
-            }
+            const isToday = dayDate.toDateString() === today.toDateString();
+            
+            const dayCard = this.createDayCard(dayName, formattedDate, isToday, dayKey);
+            container.appendChild(dayCard);
         });
+        
+        // Render notes for each day
+        this.renderAllNotes();
+    }
+    
+    /**
+     * Create a day card element
+     */
+    createDayCard(dayName, date, isToday, dayKey) {
+        const card = document.createElement('div');
+        card.className = 'day-card';
+        card.dataset.day = dayKey;
+        
+        card.innerHTML = `
+            <div class="day-header">
+                <div class="day-title">${dayName}</div>
+                <div class="day-date">${date}</div>
+                ${isToday ? '<div class="today-badge">TODAY</div>' : ''}
+            </div>
+            
+            <div class="notes-container" id="notes-${dayKey}">
+                <!-- Notes will be rendered here -->
+                <div class="empty-state">
+                    <i class="fas fa-sticky-note"></i>
+                    <p>No notes yet</p>
+                </div>
+            </div>
+            
+            <div class="add-note-form">
+                <textarea 
+                    class="note-input" 
+                    id="note-input-${dayKey}" 
+                    placeholder="Type your note here..."
+                    rows="3"
+                ></textarea>
+                <div class="form-actions">
+                    <button class="btn btn-primary btn-full" data-day="${dayKey}" data-action="add">
+                        <i class="fas fa-plus"></i>
+                        Add Note
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        return card;
+    }
+    
+    /**
+     * Render notes for a specific day
+     */
+    renderNotesForDay(dayKey) {
+        const container = document.getElementById(`notes-${dayKey}`);
+        if (!container) return;
+        
+        const notes = this.notes[dayKey] || [];
+        
+        if (notes.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-sticky-note"></i>
+                    <p>No notes yet</p>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = '';
+        
+        notes.forEach((note, index) => {
+            const noteElement = this.createNoteElement(note, dayKey, index);
+            container.appendChild(noteElement);
+        });
+    }
+    
+    /**
+     * Render notes for all days
+     */
+    renderAllNotes() {
+        DAYS_OF_WEEK.forEach(day => {
+            this.renderNotesForDay(day.toLowerCase());
+        });
+    }
+    
+    /**
+     * Create a note element
+     */
+    createNoteElement(note, dayKey, index) {
+        const noteDiv = document.createElement('div');
+        noteDiv.className = 'note';
+        
+        // Format timestamp
+        const timestamp = new Date(note.timestamp);
+        const timeString = timestamp.toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        const dateString = timestamp.toLocaleDateString();
+        
+        noteDiv.innerHTML = `
+            <div class="note-actions">
+                <button class="note-action-btn" data-day="${dayKey}" data-index="${index}" data-action="ask-ai">
+                    <i class="fas fa-robot"></i>
+                </button>
+                <button class="note-action-btn delete" data-day="${dayKey}" data-index="${index}" data-action="delete">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="note-content">${this.escapeHtml(note.content)}</div>
+            <div class="note-time">
+                <i class="far fa-clock"></i>
+                <span>${dateString} at ${timeString}</span>
+            </div>
+        `;
+        
+        return noteDiv;
     }
     
     /**
@@ -231,372 +278,218 @@ class AICalendar {
     }
     
     /**
-     * Setup event listeners for the application
+     * Add a new note for a specific day
      */
-    setupEventListeners() {
-        // Add note buttons for each day
-        document.addEventListener('click', (e) => {
-            // Add note button
-            if (e.target.closest('.add-note-btn')) {
-                const button = e.target.closest('.add-note-btn');
-                const day = button.dataset.day;
-                this.openNoteModal(day);
-            }
-            
-            // Edit existing note
-            if (e.target.closest('.note')) {
-                const noteElement = e.target.closest('.note');
-                const noteId = noteElement.dataset.noteId;
-                
-                // Don't trigger if clicking the AI button inside the note
-                if (!e.target.closest('.ai-note-action')) {
-                    this.editNote(noteId);
-                }
-            }
-            
-            // AI action button inside a note
-            if (e.target.closest('.ai-note-action')) {
-                const button = e.target.closest('.ai-note-action');
-                const day = button.dataset.day;
-                const index = parseInt(button.dataset.index);
-                this.askAIForNoteImprovement(day, index);
-            }
-        });
-        
-        // Note modal buttons
-        document.getElementById('closeNoteModal').addEventListener('click', () => {
-            this.closeNoteModal();
-        });
-        
-        document.getElementById('cancelNote').addEventListener('click', () => {
-            this.closeNoteModal();
-        });
-        
-        document.getElementById('saveNote').addEventListener('click', () => {
-            this.saveCurrentNote();
-        });
-        
-        document.getElementById('askAIForNote').addEventListener('click', () => {
-            this.askAIForCurrentNote();
-        });
-        
-        // AI modal buttons
-        document.getElementById('closeAiModal').addEventListener('click', () => {
-            this.closeAIModal();
-        });
-        
-        // Global AI buttons
-        document.getElementById('structureAllBtn').addEventListener('click', () => {
-            this.structureAllNotesWithAI();
-        });
-        
-        document.getElementById('summarizeAllBtn').addEventListener('click', () => {
-            this.summarizeWeekWithAI();
-        });
-        
-        // Close modals when clicking outside
-        window.addEventListener('click', (e) => {
-            const noteModal = document.getElementById('noteModal');
-            const aiModal = document.getElementById('aiChatModal');
-            
-            if (e.target === noteModal) {
-                this.closeNoteModal();
-            }
-            
-            if (e.target === aiModal) {
-                this.closeAIModal();
-            }
-        });
-        
-        // Handle beforeunload to clean up TensorFlow memory
-        window.addEventListener('beforeunload', () => {
-            this.cleanupTensorFlow();
-        });
-    }
-    
-    /**
-     * Open the note modal for adding/editing a note
-     */
-    openNoteModal(day, noteIndex = null) {
-        this.currentDay = day;
-        this.currentNoteId = noteIndex;
-        
-        const modal = document.getElementById('noteModal');
-        const modalTitle = document.getElementById('modalTitle');
-        const noteInput = document.getElementById('noteInput');
-        const aiResponse = document.getElementById('aiNoteResponse');
-        
-        // Reset modal state
-        aiResponse.style.display = 'none';
-        aiResponse.textContent = '';
-        
-        if (noteIndex !== null && this.notes[day] && this.notes[day][noteIndex]) {
-            // Editing existing note
-            modalTitle.textContent = `Edit Note for ${this.capitalizeFirstLetter(day)}`;
-            noteInput.value = this.notes[day][noteIndex].content;
-        } else {
-            // Adding new note
-            modalTitle.textContent = `Add Note for ${this.capitalizeFirstLetter(day)}`;
-            noteInput.value = '';
-        }
-        
-        modal.style.display = 'flex';
-        noteInput.focus();
-    }
-    
-    /**
-     * Close the note modal
-     */
-    closeNoteModal() {
-        const modal = document.getElementById('noteModal');
-        modal.style.display = 'none';
-        
-        // Clear current state
-        this.currentDay = null;
-        this.currentNoteId = null;
-    }
-    
-    /**
-     * Save the current note from the modal
-     */
-    saveCurrentNote() {
-        if (!this.currentDay) return;
-        
-        const noteInput = document.getElementById('noteInput');
-        const content = noteInput.value.trim();
+    addNote(dayKey) {
+        const input = document.getElementById(`note-input-${dayKey}`);
+        const content = input.value.trim();
         
         if (!content) {
-            alert('Please enter some text for the note.');
+            this.showNotification('Please enter note content', 'error');
+            input.focus();
             return;
         }
         
-        // Initialize day array if it doesn't exist
-        if (!this.notes[this.currentDay]) {
-            this.notes[this.currentDay] = [];
-        }
-        
-        const noteData = {
+        const note = {
             content: content,
             timestamp: Date.now(),
-            day: this.currentDay
+            day: dayKey
         };
         
-        if (this.currentNoteId !== null) {
-            // Update existing note
-            this.notes[this.currentDay][this.currentNoteId] = noteData;
-        } else {
-            // Add new note
-            this.notes[this.currentDay].push(noteData);
+        // Add note to array
+        if (!this.notes[dayKey]) {
+            this.notes[dayKey] = [];
         }
         
-        // Save to localStorage and re-render
-        this.saveNotesToStorage();
-        this.renderNotes();
-        this.closeNoteModal();
-    }
-    
-    /**
-     * Edit an existing note
-     */
-    editNote(noteId) {
-        const [day, indexStr] = noteId.split('-');
-        const index = parseInt(indexStr);
+        this.notes[dayKey].push(note);
         
-        if (this.notes[day] && this.notes[day][index]) {
-            this.openNoteModal(day, index);
+        // Save and update UI
+        this.saveNotes();
+        this.renderNotesForDay(dayKey);
+        
+        // Clear input
+        input.value = '';
+        
+        // Show success message
+        this.showNotification(`Note added to ${this.capitalizeFirstLetter(dayKey)}`, 'success');
+        
+        // Optional: Analyze note with TensorFlow.js if enabled
+        if (this.isTfReady) {
+            this.analyzeNoteWithTF(note);
         }
     }
     
     /**
-     * Ask AI to improve the current note in the modal
+     * Delete a note
      */
-    async askAIForCurrentNote() {
-        const noteInput = document.getElementById('noteInput');
-        const content = noteInput.value.trim();
-        const aiResponse = document.getElementById('aiNoteResponse');
-        
-        if (!content) {
-            alert('Please enter some text for the AI to improve.');
+    deleteNote(dayKey, index) {
+        if (!this.notes[dayKey] || !this.notes[dayKey][index]) {
+            this.showNotification('Note not found', 'error');
             return;
         }
         
-        aiResponse.style.display = 'block';
-        aiResponse.textContent = 'AI is thinking...';
+        // Remove note from array
+        this.notes[dayKey].splice(index, 1);
         
-        try {
-            const prompt = `Improve the following note to make it more structured and clear: "${content}"`;
-            const improvedText = await this.callYandexAPI(prompt);
-            
-            aiResponse.textContent = `AI Suggestion:\n\n${improvedText}`;
-            
-            // Add a button to apply the suggestion
-            const applyButton = document.createElement('button');
-            applyButton.textContent = 'Apply Suggestion';
-            applyButton.style.cssText = `
-                background: #10b981;
-                color: white;
-                border: none;
-                border-radius: 5px;
-                padding: 8px 16px;
-                margin-top: 10px;
-                cursor: pointer;
-                font-weight: 600;
-            `;
-            
-            applyButton.addEventListener('click', () => {
-                noteInput.value = improvedText;
-                aiResponse.style.display = 'none';
-            });
-            
-            // Clear previous button if exists
-            const oldButton = aiResponse.querySelector('button');
-            if (oldButton) oldButton.remove();
-            
-            aiResponse.appendChild(applyButton);
-            
-        } catch (error) {
-            console.error('Error calling Yandex API:', error);
-            aiResponse.textContent = `Error: ${error.message}. Please check your Yandex Cloud Function configuration.`;
+        // Save and update UI
+        this.saveNotes();
+        this.renderNotesForDay(dayKey);
+        
+        this.showNotification('Note deleted', 'success');
+    }
+    
+    /**
+     * Clear all notes for all days
+     */
+    clearAllNotes() {
+        if (!confirm('Are you sure you want to delete ALL notes? This action cannot be undone.')) {
+            return;
         }
+        
+        DAYS_OF_WEEK.forEach(day => {
+            this.notes[day.toLowerCase()] = [];
+        });
+        
+        this.saveNotes();
+        this.renderAllNotes();
+        
+        this.showNotification('All notes cleared', 'success');
     }
     
     /**
      * Ask AI to improve a specific note
      */
-    async askAIForNoteImprovement(day, index) {
-        if (!this.notes[day] || !this.notes[day][index]) {
-            console.error('Note not found');
+    async askAIForNote(dayKey, index) {
+        const note = this.notes[dayKey]?.[index];
+        if (!note) {
+            this.showNotification('Note not found', 'error');
             return;
         }
         
-        const note = this.notes[day][index];
-        this.openNoteModal(day, index);
+        this.showAIModal('AI is improving your note...', true);
         
-        // Wait a bit for modal to open
-        setTimeout(async () => {
-            const aiResponse = document.getElementById('aiNoteResponse');
-            aiResponse.style.display = 'block';
-            aiResponse.textContent = 'AI is thinking...';
+        try {
+            const prompt = `Improve and structure this note to make it more clear and actionable: "${note.content}"`;
+            const improvedText = await this.callYandexAPI(prompt);
             
-            try {
-                const prompt = `Improve the following note to make it more structured and clear: "${note.content}"`;
-                const improvedText = await this.callYandexAPI(prompt);
-                
-                aiResponse.textContent = `AI Suggestion:\n\n${improvedText}`;
-                
-                // Add a button to apply the suggestion
-                const applyButton = document.createElement('button');
-                applyButton.textContent = 'Apply Suggestion';
-                applyButton.style.cssText = `
-                    background: #10b981;
-                    color: white;
-                    border: none;
-                    border-radius: 5px;
-                    padding: 8px 16px;
-                    margin-top: 10px;
-                    cursor: pointer;
-                    font-weight: 600;
-                `;
-                
-                applyButton.addEventListener('click', () => {
-                    document.getElementById('noteInput').value = improvedText;
-                    aiResponse.style.display = 'none';
-                });
-                
-                aiResponse.appendChild(applyButton);
-                
-            } catch (error) {
-                console.error('Error calling Yandex API:', error);
-                aiResponse.textContent = `Error: ${error.message}. Please check your Yandex Cloud Function configuration.`;
-            }
-        }, 300);
+            this.showAIModal(
+                `Original Note:\n"${note.content}"\n\n` +
+                `AI Improved Version:\n"${improvedText}"\n\n` +
+                `Would you like to replace your note with the improved version?`,
+                false
+            );
+            
+            // Add replace button to modal
+            const responseDiv = document.getElementById('aiResponse');
+            const replaceButton = document.createElement('button');
+            replaceButton.className = 'btn btn-primary';
+            replaceButton.innerHTML = '<i class="fas fa-check"></i> Replace with AI Version';
+            replaceButton.onclick = () => {
+                this.replaceNoteWithAI(dayKey, index, improvedText);
+                this.closeAIModal();
+            };
+            
+            responseDiv.appendChild(replaceButton);
+            
+        } catch (error) {
+            console.error('AI request failed:', error);
+            this.showAIModal(`Failed to contact AI service: ${error.message}`, false);
+        }
+    }
+    
+    /**
+     * Replace a note with AI-improved version
+     */
+    replaceNoteWithAI(dayKey, index, newContent) {
+        if (!this.notes[dayKey]?.[index]) return;
+        
+        this.notes[dayKey][index].content = newContent;
+        this.notes[dayKey][index].timestamp = Date.now();
+        
+        this.saveNotes();
+        this.renderNotesForDay(dayKey);
+        
+        this.showNotification('Note updated with AI improvement', 'success');
     }
     
     /**
      * Structure all notes with AI
      */
-    async structureAllNotesWithAI() {
-        // Collect all notes from all days
-        let allNotes = [];
+    async structureAllNotes() {
+        // Collect all notes
+        const allNotes = [];
         DAYS_OF_WEEK.forEach(day => {
             const dayKey = day.toLowerCase();
-            if (this.notes[dayKey] && this.notes[dayKey].length > 0) {
-                this.notes[dayKey].forEach((note, index) => {
-                    allNotes.push({
-                        day: dayKey,
-                        index: index,
-                        content: note.content
-                    });
+            const dayNotes = this.notes[dayKey] || [];
+            
+            dayNotes.forEach(note => {
+                allNotes.push({
+                    day: day,
+                    content: note.content
                 });
-            }
+            });
         });
         
         if (allNotes.length === 0) {
-            this.showAIModal('No notes found to structure. Please add some notes first.');
+            this.showAIModal('No notes found to structure. Please add some notes first.', false);
             return;
         }
         
-        // Prepare the prompt for AI
-        const notesText = allNotes.map(note => 
-            `${this.capitalizeFirstLetter(note.day)}: ${note.content}`
-        ).join('\n\n');
-        
-        const prompt = `I have the following notes for my week. Please structure them into a well-organized list with categories or priorities:\n\n${notesText}`;
-        
-        this.showAIModal('Structuring all notes with AI...', true);
+        this.showAIModal('AI is analyzing and structuring all your notes...', true);
         
         try {
-            const structuredNotes = await this.callYandexAPI(prompt);
-            this.showAIModal(`AI has structured your notes:\n\n${structuredNotes}\n\nYou can now apply these suggestions to individual notes.`);
+            const notesText = allNotes.map(n => `${n.day}: ${n.content}`).join('\n\n');
+            const prompt = `Analyze and structure these weekly notes. Organize them into categories, suggest priorities, and identify patterns:\n\n${notesText}`;
+            
+            const analysis = await this.callYandexAPI(prompt);
+            this.showAIModal(analysis, false);
+            
         } catch (error) {
-            console.error('Error structuring notes with AI:', error);
-            this.showAIModal(`Error: ${error.message}. Please check your Yandex Cloud Function configuration.`);
+            console.error('AI analysis failed:', error);
+            this.showAIModal(`Failed to analyze notes: ${error.message}`, false);
         }
     }
     
     /**
      * Summarize the week with AI
      */
-    async summarizeWeekWithAI() {
-        // Collect all notes from all days
-        let allNotes = [];
+    async summarizeWeek() {
+        // Collect all notes
+        const allNotes = [];
         DAYS_OF_WEEK.forEach(day => {
             const dayKey = day.toLowerCase();
-            if (this.notes[dayKey] && this.notes[dayKey].length > 0) {
-                this.notes[dayKey].forEach((note, index) => {
-                    allNotes.push({
-                        day: dayKey,
-                        content: note.content
-                    });
+            const dayNotes = this.notes[dayKey] || [];
+            
+            dayNotes.forEach(note => {
+                allNotes.push({
+                    day: day,
+                    content: note.content
                 });
-            }
+            });
         });
         
         if (allNotes.length === 0) {
-            this.showAIModal('No notes found to summarize. Please add some notes first.');
+            this.showAIModal('No notes found to summarize. Please add some notes first.', false);
             return;
         }
         
-        // Prepare the prompt for AI
-        const notesText = allNotes.map(note => 
-            `${this.capitalizeFirstLetter(note.day)}: ${note.content}`
-        ).join('\n\n');
-        
-        const prompt = `Please provide a concise summary of my week based on these notes. Identify key themes, tasks, and any follow-up actions needed:\n\n${notesText}`;
-        
-        this.showAIModal('Summarizing your week with AI...', true);
+        this.showAIModal('AI is creating a weekly summary...', true);
         
         try {
+            const notesText = allNotes.map(n => `${n.day}: ${n.content}`).join('\n\n');
+            const prompt = `Create a concise weekly summary based on these notes. Highlight key achievements, pending tasks, and insights:\n\n${notesText}`;
+            
             const summary = await this.callYandexAPI(prompt);
-            this.showAIModal(`Week Summary:\n\n${summary}`);
+            this.showAIModal(summary, false);
+            
         } catch (error) {
-            console.error('Error summarizing week with AI:', error);
-            this.showAIModal(`Error: ${error.message}. Please check your Yandex Cloud Function configuration.`);
+            console.error('AI summary failed:', error);
+            this.showAIModal(`Failed to create summary: ${error.message}`, false);
         }
     }
     
     /**
-     * Call the Yandex Cloud Function API
+     * Call Yandex Cloud Function API
      */
     async callYandexAPI(prompt) {
         try {
@@ -612,7 +505,7 @@ class AICalendar {
             });
             
             if (!response.ok) {
-                throw new Error(`API returned status ${response.status}: ${response.statusText}`);
+                throw new Error(`API error: ${response.status} ${response.statusText}`);
             }
             
             const data = await response.json();
@@ -627,15 +520,16 @@ class AICalendar {
             } else if (typeof data === 'string') {
                 return data;
             } else {
-                return JSON.stringify(data);
+                // Return stringified data as fallback
+                return JSON.stringify(data, null, 2);
             }
             
         } catch (error) {
-            console.error('Error calling Yandex API:', error);
+            console.error('Yandex API call failed:', error);
             
-            // Fallback mock response for demo purposes
+            // Provide fallback mock response for demo
             if (error.message.includes('Failed to fetch') || error.message.includes('403')) {
-                throw new Error('Cannot connect to Yandex API. Please check if the function URL is correct and accessible.');
+                throw new Error('Cannot connect to AI service. Please check your internet connection and Yandex Cloud Function configuration.');
             }
             
             throw error;
@@ -643,67 +537,162 @@ class AICalendar {
     }
     
     /**
-     * Show the AI modal with a message
+     * Analyze note with TensorFlow.js (demonstration)
      */
-    showAIModal(message, showLoading = false) {
-        const modal = document.getElementById('aiChatModal');
-        const aiResponse = document.getElementById('aiChatResponse');
-        const aiLoading = document.getElementById('aiLoading');
+    async analyzeNoteWithTF(note) {
+        if (!this.isTfReady || !this.tfModel) return;
         
-        if (showLoading) {
-            aiLoading.style.display = 'flex';
-            aiResponse.textContent = '';
+        try {
+            // This is a demonstration of how TensorFlow.js could be used
+            // In a real application, you would use a proper NLP model
+            
+            // Simple text analysis: count words and estimate reading time
+            const wordCount = note.content.split(/\s+/).length;
+            const readingTime = Math.ceil(wordCount / 200); // 200 words per minute
+            
+            console.log(`Note analysis: ${wordCount} words, ~${readingTime} min read`);
+            
+        } catch (error) {
+            console.warn('TF.js analysis failed:', error);
+        }
+    }
+    
+    /**
+     * Setup event listeners
+     */
+    setupEventListeners() {
+        // Add note buttons
+        document.addEventListener('click', (e) => {
+            const target = e.target;
+            
+            // Add note button
+            if (target.closest('[data-action="add"]')) {
+                const button = target.closest('[data-action="add"]');
+                const dayKey = button.dataset.day;
+                this.addNote(dayKey);
+            }
+            
+            // Ask AI for note improvement
+            if (target.closest('[data-action="ask-ai"]')) {
+                const button = target.closest('[data-action="ask-ai"]');
+                const dayKey = button.dataset.day;
+                const index = parseInt(button.dataset.index);
+                this.askAIForNote(dayKey, index);
+            }
+            
+            // Delete note
+            if (target.closest('[data-action="delete"]')) {
+                const button = target.closest('[data-action="delete"]');
+                const dayKey = button.dataset.day;
+                const index = parseInt(button.dataset.index);
+                this.deleteNote(dayKey, index);
+            }
+        });
+        
+        // Global action buttons
+        document.getElementById('structureAllBtn')?.addEventListener('click', () => {
+            this.structureAllNotes();
+        });
+        
+        document.getElementById('summarizeAllBtn')?.addEventListener('click', () => {
+            this.summarizeWeek();
+        });
+        
+        document.getElementById('clearAllBtn')?.addEventListener('click', () => {
+            this.clearAllNotes();
+        });
+        
+        // AI modal close button
+        document.getElementById('closeAiModal')?.addEventListener('click', () => {
+            this.closeAIModal();
+        });
+        
+        // Close modal when clicking outside
+        document.getElementById('aiModal')?.addEventListener('click', (e) => {
+            if (e.target === document.getElementById('aiModal')) {
+                this.closeAIModal();
+            }
+        });
+        
+        // Allow Enter key to add notes (with Ctrl/Shift modifier)
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                const activeElement = document.activeElement;
+                if (activeElement.classList.contains('note-input')) {
+                    const dayKey = activeElement.id.replace('note-input-', '');
+                    this.addNote(dayKey);
+                }
+            }
+        });
+        
+        // Cleanup TensorFlow on page unload
+        window.addEventListener('beforeunload', () => {
+            this.cleanup();
+        });
+    }
+    
+    /**
+     * Show AI modal
+     */
+    showAIModal(message, isLoading = false) {
+        const modal = document.getElementById('aiModal');
+        const responseDiv = document.getElementById('aiResponse');
+        const loadingDiv = document.getElementById('aiLoading');
+        const titleDiv = document.getElementById('aiModalTitle');
+        
+        if (isLoading) {
+            titleDiv.textContent = 'AI Assistant';
+            responseDiv.textContent = '';
+            loadingDiv.style.display = 'flex';
         } else {
-            aiLoading.style.display = 'none';
-            aiResponse.textContent = message;
+            loadingDiv.style.display = 'none';
+            responseDiv.textContent = message;
         }
         
         modal.style.display = 'flex';
     }
     
     /**
-     * Close the AI modal
+     * Close AI modal
      */
     closeAIModal() {
-        const modal = document.getElementById('aiChatModal');
+        const modal = document.getElementById('aiModal');
         modal.style.display = 'none';
     }
     
     /**
-     * Capitalize first letter of a string
+     * Show notification
+     */
+    showNotification(message, type = 'info') {
+        const notification = document.getElementById('notification');
+        
+        notification.className = `notification ${type}`;
+        notification.innerHTML = `
+            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+            <span>${message}</span>
+        `;
+        
+        notification.classList.add('show');
+        
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            notification.classList.remove('show');
+        }, 3000);
+    }
+    
+    /**
+     * Capitalize first letter
      */
     capitalizeFirstLetter(string) {
         return string.charAt(0).toUpperCase() + string.slice(1);
     }
     
     /**
-     * Clean up TensorFlow.js memory
+     * Cleanup resources
      */
-    cleanupTensorFlow() {
+    cleanup() {
+        // Cleanup TensorFlow.js resources
         if (this.tfModel) {
             try {
                 this.tfModel.dispose();
-                console.log('TensorFlow model disposed');
-            } catch (error) {
-                console.error('Error disposing TensorFlow model:', error);
-            }
-        }
-        
-        // Clean up any remaining tensors
-        tf.disposeVariables();
-    }
-}
-
-// Initialize the application when the DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    // Create and initialize the AI Calendar application
-    const aiCalendar = new AICalendar();
-    
-    // Make it available globally for debugging
-    window.aiCalendar = aiCalendar;
-    
-    console.log('AI Calendar application initialized');
-});
-
-// Export for module usage
-export { AICalendar };
+                tf.dis
