@@ -695,4 +695,25 @@ class AICalendar {
         if (this.tfModel) {
             try {
                 this.tfModel.dispose();
-                tf.dis
+                tf.disposeVariables();
+                console.log('TensorFlow.js resources cleaned up');
+            } catch (error) {
+                console.error('Error cleaning up TensorFlow.js:', error);
+            }
+        }
+    }
+}
+
+// Initialize the application when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Create application instance
+    const app = new AICalendar();
+    
+    // Make available globally for debugging
+    window.aiCalendar = app;
+    
+    console.log('AI Weekly Calendar application loaded');
+});
+
+// Export for module usage
+export { AICalendar };
